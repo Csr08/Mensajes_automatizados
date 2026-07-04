@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+chrome_profile/
+PyWhatKit_DB.txt
+nul
