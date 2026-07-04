@@ -1,5 +1,7 @@
 import pandas as pd
 import time
+import random
+import logging
 from datetime import datetime
 import os
 import sys
@@ -15,6 +17,17 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 ARCHIVO_CSV = "mensajes.csv"
 PERFIL_CHROME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chrome_profile")
+ARCHIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "whatsapp_envios.log")
+TIMEOUT_LOGIN = 120
+PAUSA_LARGA_CADA = 10
+PAUSA_LARGA_SEG = 30
+
+logging.basicConfig(
+    filename=ARCHIVO_LOG,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8"
+)
 
 
 def cargar_mensajes(archivo):
@@ -41,6 +54,10 @@ def formatear_numero(contacto):
     if not contacto.startswith("+"):
         contacto = "+" + contacto
     return contacto
+
+
+def pausa_aleatoria(minimo, maximo):
+    time.sleep(random.uniform(minimo, maximo))
 
 
 def iniciar_driver():
@@ -82,7 +99,7 @@ def esperar_login(driver):
     ]
 
     inicio = time.time()
-    while time.time() - inicio < 120:
+    while time.time() - inicio < TIMEOUT_LOGIN:
         for i in range(0, len(selectores), 2):
             try:
                 driver.find_element(selectores[i], selectores[i+1])
@@ -115,7 +132,7 @@ def verificar_error_numero(driver):
 def enviar_mensaje_individual(driver, numero, mensaje):
     url = f"https://web.whatsapp.com/send?phone={numero}"
     driver.get(url)
-    time.sleep(6)
+    pausa_aleatoria(5, 8)
 
     if verificar_error_numero(driver):
         return False, "Numero no registrado en WhatsApp"
@@ -127,14 +144,11 @@ def enviar_mensaje_individual(driver, numero, mensaje):
             )
         )
         caja.click()
-        time.sleep(0.5)
+        pausa_aleatoria(0.5, 1.5)
         caja.send_keys(mensaje)
-        time.sleep(1)
+        pausa_aleatoria(1, 2)
         caja.send_keys(Keys.ENTER)
-        time.sleep(3)
-
-        if verificar_error_numero(driver):
-            return False, "Numero no registrado en WhatsApp"
+        pausa_aleatoria(2, 4)
 
         return True, "Enviado correctamente"
 
@@ -158,6 +172,8 @@ def enviar_mensajes(contactos):
     enviados = 0
     fallidos = 0
 
+    logging.info(f"Iniciando envio de {total} mensaje(s)")
+
     for i, item in enumerate(contactos):
         contacto = formatear_numero(item["contacto"])
         mensaje = str(item["mensaje"]).strip()
@@ -169,13 +185,19 @@ def enviar_mensajes(contactos):
         exito, motivo = enviar_mensaje_individual(driver, numero_limpio, mensaje)
 
         if exito:
+            logging.info(f"OK - {contacto}: {motivo}")
             print(f"OK - {motivo}")
             enviados += 1
         else:
+            logging.warning(f"FALLO - {contacto}: {motivo}")
             print(f"FALLO - {motivo}")
             fallidos += 1
 
-        time.sleep(2)
+        pausa_aleatoria(3, 6)
+
+        if (i + 1) % PAUSA_LARGA_CADA == 0 and (i + 1) < total:
+            print(f"  Pausa de {PAUSA_LARGA_SEG}s para evitar deteccion...")
+            time.sleep(PAUSA_LARGA_SEG)
 
     print(f"\n{'='*50}")
     print("Resumen final:")
@@ -183,6 +205,7 @@ def enviar_mensajes(contactos):
     print(f"  Enviados: {enviados}")
     print(f"  Fallidos: {fallidos}")
     print(f"{'='*50}")
+    logging.info(f"Resumen - Total: {total} | Enviados: {enviados} | Fallidos: {fallidos}")
 
     driver.quit()
 
